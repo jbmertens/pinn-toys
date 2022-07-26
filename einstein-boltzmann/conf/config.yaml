@@ -1,0 +1,28 @@
+defaults :
+  - modulus_default
+  - arch:
+      - fully_connected
+  - scheduler: tf_exponential_lr
+  - optimizer: adam
+  - loss: sum
+  - _self_
+
+arch:
+    fully_connected:
+        layer_size: 128
+        nr_layers: 16
+        adaptive_activations: true
+
+save_filetypes : "vtk,npz"
+
+scheduler:
+  decay_rate: 0.98
+  decay_steps: 100000
+
+training:
+  rec_results_freq: 1000
+  max_steps : 1000000
+
+batch_size:
+  IC: 10
+  interior: 1000
