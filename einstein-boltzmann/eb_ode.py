@@ -42,6 +42,22 @@ class EinsteinBoltzmann(PDES):
             func = Function(func_name)(eta, k)
             theta_ls.append(func)
         self.theta_ls = theta_ls
+
+        # Build dictionary of fields
+        self.fields = {
+            "a": self.a,
+            "d_b": self.d_b,
+            "d_c": self.d_c,
+            "v_b": self.v_b,
+            "v_c": self.v_c,
+            "Phi": self.Phi,
+            "Psi": self.Psi
+        }
+        for l in range(max_l + 1):
+            theta_l_name = "Theta_" + str(l)
+            self.fields[theta_l_name] = theta_ls[l]
+        
+        # Add in theta eqs
         self.theta_l_eqs = self.build_hierarchy()
         
         # Add in Einstein Eqs

@@ -22,6 +22,7 @@ from eb_ode import EinsteinBoltzmann
 
 # Custom plot for validation
 # define custom class
+'''
 class CustomValidatorPlotter(ValidatorPlotter):
 
     def __call__(self, invar, true_outvar, pred_outvar):
@@ -84,20 +85,25 @@ class CustomValidatorPlotter(ValidatorPlotter):
         slice_data = data[(z == z[zidx]) & (t == t[tidx])]
         slice_data = np.split( slice_data, int(np.sqrt(len(slice_data))) )
         return slice_data
-
+'''
 
 @modulus.main(config_path="conf", config_name="config")
 def run(cfg: ModulusConfig) -> None:
     print(to_yaml(cfg))
 
-    k,mu,eta = Symbol("k"), Symbol("mu"), Symbol("eta")
+    # Define input params
+    k,eta = Symbol("k"), Symbol("eta")
+
+    max_l = 4
+    Ox = (0.67, 0.33, 0.0, 1e-4)
+    h = .67
+
 
     # make list of nodes to unroll graph on
-    sp = EinsteinBoltzmann()
+    eb = EinsteinBoltzmann(max_l, Ox=Ox, h=h)
     fluid_net = instantiate_arch(
-        input_keys=[Key("k"), Key("mu"), Key("eta")],
-        output_keys=[Key("a"), Key("theta_real"), Key("theta_imag"), Key("d_c_real"), Key("d_c_imag"), Key("u_c_real"), Key("u_c_imag"), Key("phi_real"), Key("phi_imag")],
-        periodicity={"mu": (0, 1)},
+        input_keys=[Key("k"), Key("eta")],
+        output_keys=[Key(field_name) for field_name in list(eb.fields.keys())],
         cfg=cfg.arch.fully_connected,
     )
     nodes = sp.make_nodes() + [
@@ -113,85 +119,45 @@ def run(cfg: ModulusConfig) -> None:
     domain = Domain()
 
     # initial condition
+    # FIXME: need better way to set ICS
+    ics = {field: 1.0 for field in list(eb.fields.keys())}
+    lambdas = {field: 1.0 for field in list(eb.fields.keys())}
     initial = PointwiseInteriorConstraint(
         nodes=nodes,
         geometry=geo,
-        outvar={"a": 0.01, 
-                "theta_real": 1.0, 
-                "theta_imag": 0.0, 
-                "d_c_real": 1.0, 
-                "d_c_imag": 0.0, 
-                "u_c_real": 1.0, 
-                "u_c_imag": 0.0, 
-                "phi_real": 1.0, 
-                "phi_imag": 0.0},
+        outvar=ics,
         batch_size=cfg.batch_size.initial,
-        bounds={k: (0.001, 100), mu: (0, 1)},
-        lambda_weighting={"a": 1.0, 
-                          "theta_real": 1.0,
-                          "theta_imag": 1.0, 
-                          "d_c_real": 1.0, 
-                          "d_c_imag": 1.0, 
-                          "u_c_real": 1.0, 
-                          "u_c_imag": 1.0, 
-                          "phi_real": 1.0, 
-                          "phi_imag": 1.0},
+        bounds={k: (0.001, 100)},
+        lambda_weighting=lambdas,
         param_ranges={eta: 0.0},
     )
     domain.add_constraint(initial, "initial")
 
     # interior
+    intr = {eq: 0.0 for eq in list(eb.equations.keys())}
+    lambdas_eq = {eq: 1.0 for eq in list(eb.equations.keys())}
     interior = PointwiseInteriorConstraint(
         nodes=nodes,
         geometry=geo,
-        outvar={"friedmann_eq": 0.0, 
-                "theta_real_eq": 0.0, 
-                "theta_imag_eq": 0.0, 
-                "d_c_real_eq": 0.0, 
-                "d_c_imag_eq": 0.0, 
-                "u_c_real_eq": 0.0, 
-                "u_c_imag_eq": 0.0, 
-                "phi_real_eq": 0.0, 
-                "phi_imag_eq": 0.0},
+        outvar=intr,
         batch_size=cfg.batch_size.interior,
-        bounds={k: (0.001, 100), mu: (0, 1)},
+        bounds={k: (0.001, 100)},
         param_ranges=time_range,
-        lambda_weighting={
-            "friedmann_eq": 1.0,
-            "theta_real_eq": 1.0,
-            "theta_imag_eq": 1.0,
-            "d_c_real_eq": 1.0,
-            "d_c_imag_eq": 1.0,
-            "u_c_real_eq": 1.0,
-            "u_c_imag_eq": 1.0,
-            "phi_real_eq": 1.0,
-            "phi_imag_eq": 1.0
-        },
+        lambda_weighting=lambdas_eq,
     )
     domain.add_constraint(interior, "interior")
 
 
     deltaEta = 0.5
     deltaK = 0.05
-    deltaMu = 0.05
     k = np.arange(0.001, 100, deltaK)
-    mu = np.arange(0, 1, deltaMu)
     eta = np.arange(0, 100, deltaEta)
-    K, Mu, Eta = np.meshgrid(k, mu, eta)
+    K, Eta = np.meshgrid(k, eta)
     K = np.expand_dims(K.flatten(), axis=-1)
-    Mu = np.expand_dims(Mu.flatten(), axis=-1)
     Eta = np.expand_dims(Eta.flatten(), axis=-1)
     u = 0.0*np.sin(X)
-    invar_numpy = {"k": K, "mu": Mu, "eta": Eta}
-    outvar_numpy = {"a": u, 
-                    "theta_real": u, 
-                    "theta_imag": u, 
-                    "d_c_real": u, 
-                    "d_c_imag": u, 
-                    "u_c_real": u, 
-                    "u_c_imag": u, 
-                    "phi_real":u, 
-                    "phi_imag"}
+    invar_numpy = {"k": K, "eta": Eta}
+    outvar_numpy = {field_name:u for field_name in list(eb.fields.keys())}
     validator = PointwiseValidator( invar_numpy, outvar_numpy, nodes,
         batch_size=128, plotter=CustomValidatorPlotter() )
     domain.add_validator(validator)
