@@ -6,89 +6,154 @@ from modulus.pdes import PDES
 class EinsteinBoltzmann(PDES):
     name = "EinsteinBoltzmann"
 
-    def __init__(self, Ox=(0.67,0.33, 0.0), h=0.67, T_0=2.7):
-
+    def __init__(self, max_l, Ox=(0.67, .33, 0.0, 1e-4), h=.67, T_0=2.7):
+        
+        self.max_l = max_l
         self.Ox = Ox
         self.h = h
         self.T_0 = T_0
-
+        
         OL = Number(Ox[0])
-        Om = Number(Ox[1])
-        Og = Number(Ox[2])
+        Oc = Number(Ox[1])
+        Ob = Number(Ox[2])
+        Og = Number(Ox[3])
+        
+        # Defining and storing all functions
+        self.eta, self.k = Symbol("eta"), Symbol("k")
+        eta, k = self.eta, self.k
+        
+        # Gravity variables
+        self.Phi = Function("Phi")(eta, k)
+        self.Psi = Function("Psi")(eta, k)
+        self.a = Function("a")(eta)
+        
+        # Fluid fields
+        self.d_b = Function("d_b")(eta, k) # Baryon fluid
+        self.d_c = Function("d_c")(eta, k)
 
-        # Constants
-        c = 1
-        hbar = 1
-        m_e = 1
-
-        H0 = 100*h
-        alpha_fs = 1/137
-        sigma_T = 8*np.pi/3 * (alpha_fs*hbar*c/m_e/c**2)**2
-
-        # coordinates
-        # eta: conformal time
-        # k: wavevector magnitude
-        # mu: dot product between photon momentum unit vector and k unit vector
-        eta, k, mu = Symbol("eta"), Symbol("k"), Symbol("mu")
-
-        # Background equations
-        a = Function("a")(eta, k, mu)
-
-        # Temperature anisotropy
-        theta_real = Function("theta_real")(eta, k, mu)
-        theta_imag = Function("theta_imag")(eta, k, mu)
-
-        # fluid fields (real and imaginary parts), all defined in k-space
-        # CDM density contrast
-        d_c_real = Function("d_c_real")(eta, k, mu)
-        d_c_imag = Function("d_c_imag")(eta, k, mu)
-
-        # CDM velocity field
-        d_c_real = Function("u_c_real")(eta, k, mu)
-        d_c_imag = Function("u_c_imag")(eta, k, mu)
-
-        # Metric potentials
-        phi_real = Function("phi_real")(eta, k, mu)
-        phi_imag = Function("phi_imag")(eta, k, mu)
-
-        # set equations
+        self.v_b = Function("v_b")(eta, k) # CDM fluid
+        self.v_c = Function("v_c")(eta, k)
+        
+        
+        # Generating list of theta_l functions 
+        theta_ls = []
+        for l in range(max_l + 1):
+            func_name = "Theta_" + str(l)
+            func = Function(func_name)(eta, k)
+            theta_ls.append(func)
+        self.theta_ls = theta_ls
+        self.theta_l_eqs = self.build_hierarchy()
+        
+        # Add in Einstein Eqs
+        self.einstein_eqs = self.build_gravity()
+        
+        # Add in fluid equations
+        self.fluid_eqs = self.build_fluid()
+        
+        # Add in scale factor evolution
+        self.friedmann_eq = self.build_friedmann()
+        
+        # Populate equations method
         self.equations = {}
+        self.equations.update(self.theta_l_eqs)
+        self.equations.update(self.einstein_eqs)
+        self.equations.update(self.fluid_eqs)
+        self.equations["friedmann_eq"] = self.friedmann_eq
+        
+        
+    def build_hierarchy(self, Gamma=1):
 
-        # FIXME: Need equation for theta_0_real and theta_0_imag
+        max_l = self.max_l
+        # Given maximum l, builds Boltzmann hierarchy
+        eta, k = self.eta, self.k
 
-        # Photon distribution equations
-        self.equations["theta_real_eq"] = theta_real.diff("eta") - k*mu*theta_imag + phi_real.diff("eta") + k*mu*phi_imag - 2*sigma_T*(m_e*T_0/2/np.pi)**1.5*exp(-m_e*a/T_0)/sqrt(a)*(theta_0_real - theta_r)
-        self.equations["theta_imag_eq"] = theta_imag.diff("eta") + k*mu*theta_real + phi_imag.diff("eta") - k*mu*phi_real - 2*sigma_T*(m_e*T_0/2/np.pi)**1.5*exp(-m_e*a/T_0)/sqrt(a)*(theta_0_imag - theta_imag)
+        # Defining other fields (metric and fluid)
+        theta_ls = self.theta_ls
+        Phi = self.Phi
+        Psi = self.Psi
+        v_b = self.v_b
+        
 
-        # CDM fluid equations
-        self.equations["d_c_real_eq"] = d_c_real.diff("eta") - k*u_c_imag + 3*phi_real.diff("eta")
-        self.equations["d_c_imag_eq"] = d_c_imag.diff("eta") + k*u_c_real + 3*phi_imag.diff("eta")
+        # Building hierarchy of eqs
+        # Note that for l=0, theta_ls[l-1] will give the last theta in the list
+        # but this isn't a problem because that term will be multiplied by 0
+        
+        # Also, there is an additional factor of (1 - KD(l+1, max_l)) that serves
+        # to remove the l+1 term on the max_l equation so the system will be closed.
+        theta_l_eqs = {}
+        for l in range(max_l):
+            eq = theta_ls[l].diff("eta") + k/(2*l+1)*((1 - KD(l+1, max_l))*(l+1)*theta_ls[l+1] - l*theta_ls[l-1])\
+                 - KD(l,0)*Phi.diff("eta") + KD(l,1)*k*Psi/3 \
+                 -Gamma*((1-KD(l,0))*theta_ls[l] + KD(1,l)*v_b/3 - KD(l,2)*theta_ls[2]/10)
+            
+            
+            eq_name = "Theta_" + str(l) +"_eq"
+            theta_l_eqs[eq_name] = eq
 
-        self.equations["u_c_real_eq"] = u_c_real.diff("eta") + a.diff("eta") / a *u_c_real + k*phi_imag
-        self.equations["u_c_imag_eq"] = u_c_imag.diff("eta") + a.diff("eta") / a *u_c_imag - k*phi_real
+        return theta_l_eqs
 
+    def build_gravity(self):
+        
+        # Builds scalar metric evolution and constraint equations
+        # as well as scale factor evolution (Friedmann equation)
+        
+        H0 = self.h*100
+        Oc = self.Ox[1]
+        Ob = self.Ox[2]
+        Og = self.Ox[3]
+        
+        eta, k = self.eta, self.k
+        theta_ls = self.theta_ls
+        Phi, Psi = self.Phi, self.Psi
+        a = self.a
+        d_c, d_b = self.d_c, self.d_b
 
-        # Metric potential evolution (Einstein equations)
-        self.equations["phi_real_eq"] = k**2*phi_real + 3*a.diff("eta")/a*(1 + a.diff("eta")/a)*phi_real.diff("eta") - 12*H0*H0*(Om/a*d_c_real + 4*Og/a**2*theta_0_real)
-        self.equations["phi_imag_eq"] = k**2*phi_imag + 3*a.diff("eta")/a*(1 + a.diff("eta")/a)*phi_imag.diff("eta") - 12*H0*H0*(Om/a*d_c_imag + 4*Og/a**2*theta_0_imag)
+        # Build Einstein Equations
+        einstein_evo_eq = k**2*Phi + 3*a.diff("eta")/a*(Phi.diff("eta")-Psi.diff("eta")*a.diff("eta")/a)\
+        - 12*H0*H0*(Oc/a*d_c + Ob/a*d_b + 4*Og/a**2*theta_ls[0])
+        einstein_constr_eq = k**2*(Phi + Psi) + 12*H0*H0*(Og/a**2*theta_ls[2])
 
-        # Background/Friedmann equation
-        self.equations["friedmann_eq"] = (a.diff("eta"))**2 - H0**2*(Om/a + OL*a**4 + Og)
+        einstein_eqs = {"einstein_evo_eq": einstein_evo_eq, "einstein_constr_eq": einstein_constr_eq}
 
-    def legendre_2(self, mu):
+        return einstein_eqs
+    
+    def build_fluid(self, Gamma=1):
+        
+        # Builds fluid evolution equations for density and velocity fields
+        Ob, Og = self.Ox[2], self.Ox[3]
+        
+        eta, k = self.eta, self.k
+        
+        d_c = self.d_c
+        d_b = self.d_b
+        
+        v_c = self.v_c
+        v_b = self.v_b
 
-        return (3 mu**2 - 1)/2
+        a = self.a
+        theta_ls = self.theta_ls
+        
+        Phi = self.Phi
+        Psi = self.Psi
+        
+        d_c_eq = d_c.diff("eta") - k*v_c + 3*Phi.diff("eta")
+        d_b_eq = d_b.diff("eta") - k*v_b + 3*Phi.diff("eta")
+        
+        v_c_eq = v_c.diff("eta") + a.diff("eta")/a*v_c + k*Psi
+        v_b_eq = v_b.diff("eta") + a.diff("eta")/a*v_b + k*Psi - 3/4*Gamma*Ob/Og*a*(v_b + 3*theta_ls[1])
+        
+        
+        fluid_eqs = {"d_c_eq": d_c_eq, "d_b_eq": d_b_eq, "v_c_eq": v_c_eq, "v_b_eq": v_b_eq}
+        return fluid_eqs
+    
+    def build_friedmann(self):
+        
+        # Builds friedmann equation to govern scale factor evolution
+        eta = self.eta
+        a = self.a
 
-    def rho_g(self, a, T_0=2.725):
-
-        # Gives the photon energy density as a function of the scale factor given
-        # a value of the CMB temperature today
-
-        return np.pi/15*(T_0/a)**4
-
-    def rho_b(self, a, Omega_m, h):
-
-        # Gives the matter energy density as a function of the scale factor
-        # given the fractional matter density today and the hubble parameter
-
-        return 
+        H0 = self.h*100
+        OL, Oc, Ob, Og = self.Ox
+        
+        friedmann_eq = (a.diff("eta"))**2 - H0*H0*(Oc/a + Ob/a + OL/a**4 + Og)
+        return friedmann_eq
