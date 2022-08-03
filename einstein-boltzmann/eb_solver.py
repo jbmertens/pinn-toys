@@ -8,7 +8,7 @@ from modulus.hydra import to_yaml, instantiate_arch
 from modulus.hydra.config import ModulusConfig
 from modulus.continuous.solvers.solver import Solver
 from modulus.continuous.domain.domain import Domain
-from modulus.geometry.csg.csg_3d import Box
+from modulus.geometry.csg.csg_1d import Line1D
 from modulus.continuous.constraints.constraint import (
     PointwiseBoundaryConstraint,
     PointwiseInteriorConstraint,
@@ -20,72 +20,7 @@ from modulus.pdes import PDES
 
 from eb_ode import EinsteinBoltzmann
 
-# Custom plot for validation
-# define custom class
-'''
-class CustomValidatorPlotter(ValidatorPlotter):
 
-    def __call__(self, invar, true_outvar, pred_outvar):
-        "Custom plotting function for validator"
-
-        # get input variables
-        k, mu, eta = invar["k"][:,0], invar["mu"][:,0], invar["eta"][:,0]
-        n = len(k)
-
-        # get and interpolate output variable
-        theta_real_pred, theta_imag_pred, d_c_real_pred, d_c_imag_pred, u_c_real_pred,\
-            u_c_imag_pred, phi_real_pred, phi_imag_pred, a_pred =\
-            pred_outvar["theta_real_pred"][:,0], pred_outvar["theta_imag_pred"][:,0],\
-            pred_outvar["d_c_real_pred"][:,0], pred_outvar["d_c_imag_pred"][:,0],\
-            pred_outvar["u_c_real_pred"][:,0], pred_outvar["u_c_imag_pred"][:,0],
-            pred_outvar["phi_real_pred"][:,0], pred_outvar["phi_imag_pred"][:,0],\
-            pred_outvar["a_pred"][:,0]
-
-        etamin = eta[0]
-        etamid = eta[len(t)//2]
-        etamax = eta[-1]
-
-        gridify(data, z, zidx, t, tidx)
-
-
-        fig, (  (ax11, ax12, ax13, ax14, ax15),
-                (ax21, ax22, ax23, ax24, ax25),
-                (ax31, ax32, ax33, ax34, ax35)
-            ) = plt.subplots(3, 5, sharex=True, sharey=True)
-
-        
-
-        # make plot
-        f = plt.figure(figsize=(14,4), dpi=100)
-        plt.suptitle("Lid driven cavity: PINN vs true solution")
-        plt.subplot(1,3,1)
-        plt.title("True solution (u)")
-        plt.imshow(u_true.T, origin="lower", extent=extent, vmin=-0.2, vmax=1)
-        plt.xlabel("x"); plt.ylabel("y")
-        plt.colorbar()
-        plt.vlines(-0.05, -0.05, 0.05, color="k", lw=10, label="No slip boundary")
-        plt.vlines( 0.05, -0.05, 0.05, color="k", lw=10)
-        plt.hlines(-0.05, -0.05, 0.05, color="k", lw=10)
-        plt.legend(loc="lower right")
-        plt.subplot(1,3,2)
-        plt.title("PINN solution (u)")
-        plt.imshow(u_pred.T, origin="lower", extent=extent, vmin=-0.2, vmax=1)
-        plt.xlabel("x"); plt.ylabel("y")
-        plt.colorbar()
-        plt.subplot(1,3,3)
-        plt.title("Difference")
-        plt.imshow((u_true-u_pred).T, origin="lower", extent=extent, vmin=-0.2, vmax=1)
-        plt.xlabel("x"); plt.ylabel("y")
-        plt.colorbar()
-        plt.tight_layout()
-
-        return [(f, "custom_plot"),]
-
-    def gridify(data, z, zidx, t, tidx) :
-        slice_data = data[(z == z[zidx]) & (t == t[tidx])]
-        slice_data = np.split( slice_data, int(np.sqrt(len(slice_data))) )
-        return slice_data
-'''
 
 @modulus.main(config_path="conf", config_name="config")
 def run(cfg: ModulusConfig) -> None:
@@ -106,13 +41,13 @@ def run(cfg: ModulusConfig) -> None:
         output_keys=[Key(field_name) for field_name in list(eb.fields.keys())],
         cfg=cfg.arch.fully_connected,
     )
-    nodes = sp.make_nodes() + [
+    nodes = eb.make_nodes() + [
         fluid_net.make_node(name="eb_network", jit=cfg.jit),
     ]
 
     # add constraints to solver
     # make geometry
-    geo = Rectangle( (0.001, 0), (100, 1) )
+    geo = Line1D( 0.001, 100 )
     eta_range = {eta: (0, 100)}
 
     # make domain
@@ -122,25 +57,29 @@ def run(cfg: ModulusConfig) -> None:
     # FIXME: need better way to set ICS
     ics = {field: 1.0 for field in list(eb.fields.keys())}
     lambdas = {field: 1.0 for field in list(eb.fields.keys())}
-    initial = PointwiseInteriorConstraint(
+    batch_size_init = cfg.batch_size.IC
+    print("HEY LOOK HERE", batch_size_init)
+    IC = PointwiseInteriorConstraint(
         nodes=nodes,
         geometry=geo,
         outvar=ics,
-        batch_size=cfg.batch_size.initial,
+        batch_size=batch_size_init,
         bounds={k: (0.001, 100)},
         lambda_weighting=lambdas,
         param_ranges={eta: 0.0},
     )
-    domain.add_constraint(initial, "initial")
+    domain.add_constraint(IC, "IC")
 
     # interior
     intr = {eq: 0.0 for eq in list(eb.equations.keys())}
     lambdas_eq = {eq: 1.0 for eq in list(eb.equations.keys())}
+    batch_size_intr = cfg.batch_size.interior
+    print(batch_size_intr)
     interior = PointwiseInteriorConstraint(
         nodes=nodes,
         geometry=geo,
         outvar=intr,
-        batch_size=cfg.batch_size.interior,
+        batch_size=batch_size_intr,
         bounds={k: (0.001, 100)},
         param_ranges=time_range,
         lambda_weighting=lambdas_eq,
@@ -148,6 +87,7 @@ def run(cfg: ModulusConfig) -> None:
     domain.add_constraint(interior, "interior")
 
 
+    # FIXME: placeholder validator
     deltaEta = 0.5
     deltaK = 0.05
     k = np.arange(0.001, 100, deltaK)

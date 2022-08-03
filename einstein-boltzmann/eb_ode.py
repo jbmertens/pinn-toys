@@ -1,4 +1,5 @@
 from sympy import Symbol, Function, Number, log, exp, sqrt
+from sympy import KroneckerDelta as KD
 from modulus.pdes import PDES
 
 
