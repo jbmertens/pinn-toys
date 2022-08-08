@@ -27,7 +27,7 @@ def run(cfg: ModulusConfig) -> None:
     print(to_yaml(cfg))
 
     # Define input params
-    k,eta = Symbol("k"), Symbol("eta")
+    k,eta = Symbol("x"), Symbol("eta")
 
     max_l = 4
     Ox = (0.67, 0.33, 0.0, 1e-4)
@@ -37,7 +37,7 @@ def run(cfg: ModulusConfig) -> None:
     # make list of nodes to unroll graph on
     eb = EinsteinBoltzmann(max_l, Ox=Ox, h=h)
     fluid_net = instantiate_arch(
-        input_keys=[Key("k"), Key("eta")],
+        input_keys=[Key("x"), Key("eta")],
         output_keys=[Key(field_name) for field_name in list(eb.fields.keys())],
         cfg=cfg.arch.fully_connected,
     )
@@ -55,10 +55,12 @@ def run(cfg: ModulusConfig) -> None:
 
     # initial condition
     # FIXME: need better way to set ICS
-    ics = {field: 1.0 for field in list(eb.fields.keys())}
+    ics = {field: -k**2 for field in list(eb.fields.keys())}
+    print(ics)
     lambdas = {field: 1.0 for field in list(eb.fields.keys())}
     batch_size_init = cfg.batch_size.IC
     print("HEY LOOK HERE", batch_size_init)
+    print(geo.sample_interior(10, {k:(0.001,100)}))
     IC = PointwiseInteriorConstraint(
         nodes=nodes,
         geometry=geo,
@@ -81,25 +83,25 @@ def run(cfg: ModulusConfig) -> None:
         outvar=intr,
         batch_size=batch_size_intr,
         bounds={k: (0.001, 100)},
-        param_ranges=time_range,
+        param_ranges=eta_range,
         lambda_weighting=lambdas_eq,
     )
     domain.add_constraint(interior, "interior")
 
 
     # FIXME: placeholder validator
-    deltaEta = 0.5
-    deltaK = 0.05
-    k = np.arange(0.001, 100, deltaK)
-    eta = np.arange(0, 100, deltaEta)
+    deltaEta = 0.01
+    deltaK = 0.01
+    eta = np.arange(0, 100)
+    k = np.arange(0.001, 100)
     K, Eta = np.meshgrid(k, eta)
     K = np.expand_dims(K.flatten(), axis=-1)
     Eta = np.expand_dims(Eta.flatten(), axis=-1)
-    u = 0.0*np.sin(X)
-    invar_numpy = {"k": K, "eta": Eta}
-    outvar_numpy = {field_name:u for field_name in list(eb.fields.keys())}
-    validator = PointwiseValidator( invar_numpy, outvar_numpy, nodes,
-        batch_size=128, plotter=CustomValidatorPlotter() )
+    invar_numpy = {"x": K, "eta": Eta}
+    outvar_numpy = {key: K + Eta for key in list(eb.fields.keys())}
+    validator = PointwiseValidator(
+        nodes=nodes, invar=invar_numpy, true_outvar=outvar_numpy, batch_size=128
+    )
     domain.add_validator(validator)
 
 

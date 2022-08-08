@@ -20,7 +20,8 @@ class EinsteinBoltzmann(PDES):
         Og = Number(Ox[3])
         
         # Defining and storing all functions
-        self.eta, self.k = Symbol("eta"), Symbol("k")
+        # NOTE: k here is set to x for modulus geometry model
+        self.eta, self.k = Symbol("eta"), Symbol("x")
         eta, k = self.eta, self.k
         
         # Gravity variables
