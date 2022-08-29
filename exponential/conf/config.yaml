@@ -7,16 +7,22 @@ defaults :
   - loss: sum
   - _self_
 
+arch:
+    fully_connected:
+        layer_size: 64
+        nr_layers: 4
+        adaptive_activations: true
+
+save_filetypes : "vtk,npz"
+
 scheduler:
-  decay_rate: 0.95
-  decay_steps: 100
+  decay_rate: 0.98
+  decay_steps: 100000
 
 training:
   rec_results_freq: 1000
-  rec_constraint_freq: 10000
-  max_steps : 1000000
+  max_steps : 10000000
 
 batch_size:
-  initial: 500
+  IC: 10
   interior: 1000
-  surface: 500

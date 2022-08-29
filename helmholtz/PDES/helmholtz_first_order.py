@@ -1,19 +1,17 @@
-"""Chameleon equation
+"""First order form of the Helmholtz equation
 """
 
 from sympy import Symbol, Function, Number
-from sympy import Symbol, pi, sin
 
 from modulus.pdes import PDES
 
 
-class ChameleonEquation(PDES):
-    name = "ChameleonEquation"
+class HelmholtzEquation(PDES):
+    name = "HelmholtzEquation"
 
-    def __init__(self, u, dim=2):
+    def __init__(self, u, k, dim=3):
         """
-        Chameleon equation solution
-        (based on Helmholtz equation solution)
+        Helmholtz equation
 
         Parameters
         ==========
@@ -56,17 +54,16 @@ class ChameleonEquation(PDES):
         else:
             dudz = Number(0)
 
+        # wave speed coefficient
+        if type(k) is str:
+            k = Function(k)(*input_variables)
+        elif type(k) in [float, int]:
+            k = Number(k)
+
         # set equations
-        LL = 2.4
         self.equations = {}
-        self.equations["chameleon"] = -(
-            dudx.diff(x) + dudy.diff(y) + dudz.diff(z)\
-            + LL**5 / u**2 \
-            + -(
-                -((pi) ** 2) * sin(pi * x) * sin(4 * pi * y)
-                - ((4 * pi) ** 2) * sin(pi * x) * sin(4 * pi * y)
-                + 1 * sin(pi * x) * sin(4 * pi * y)
-            )**2
+        self.equations["helmholtz"] = -(
+            k ** 2 * u + dudx.diff(x) + dudy.diff(y) + dudz.diff(z)
         )
         self.equations["compatibility_dudx"] = u.diff(x) - dudx
         self.equations["compatibility_dudy"] = u.diff(y) - dudy

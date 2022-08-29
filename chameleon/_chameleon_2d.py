@@ -1,12 +1,11 @@
 import numpy as np
-from sympy import Symbol, pi, sin
+from sympy import Symbol
 
 import modulus
 from modulus.hydra import to_yaml, instantiate_arch
 from modulus.hydra.config import ModulusConfig
 from modulus.continuous.solvers.solver import Solver
 from modulus.continuous.domain.domain import Domain
-from modulus.geometry.csg.csg_1d import Line1D
 from modulus.geometry.csg.csg_2d import Rectangle
 from modulus.continuous.constraints.constraint import (
     PointwiseBoundaryConstraint,
@@ -14,54 +13,53 @@ from modulus.continuous.constraints.constraint import (
 )
 
 from modulus.continuous.validator.validator import PointwiseValidator
+from modulus.continuous.inferencer.inferencer import PointwiseInferencer
 from modulus.key import Key
 from modulus.node import Node
-from chameleon_equation import ChameleonEquation
+from chameleon_equation import ChameleonEquation2D
 
 
 @modulus.main(config_path="conf", config_name="config")
 def run(cfg: ModulusConfig) -> None:
-    # print(to_yaml(cfg))
-    # print(type(cfg.optimizer))
-    # print(cfg.optimizer)
+    print(to_yaml(cfg))
+    print(type(cfg.optimizer))
+    print(cfg.optimizer)
 
     # make list of nodes to unroll graph on
-    we = ChameleonEquation(c=1.0)
-    wave_net = instantiate_arch(
-        input_keys=[Key("x"), Key("t")],
+    ce = ChameleonEquation2D(Lambda=2.4)
+    chameleon_net = instantiate_arch(
+        input_keys=[Key("x"), Key("y")],
         output_keys=[Key("u")],
         cfg=cfg.arch.fully_connected,
     )
-    nodes = we.make_nodes() + [wave_net.make_node(name="wave_network", jit=cfg.jit)]
+    nodes = ce.make_nodes() + [chameleon_net.make_node(name="chameleon_network", jit=cfg.jit)]
 
     # add constraints to solver
     # make geometry
-    x, t_symbol = Symbol("x"), Symbol("t")
+    x, y = Symbol("x"), Symbol("y")
     L = float(np.pi)
-    geo = Rectangle((0, 0), (L, L))
+    rec = Rectangle((0, L), (0, L))
 
     # make domain
     domain = Domain()
 
-    # boundary condition
-    BC = PointwiseBoundaryConstraint(
+    # boundary conditions
+    wall = PointwiseBoundaryConstraint(
         nodes=nodes,
-        geometry=geo,
+        geometry=rec,
         outvar={"u": 0},
-        batch_size=cfg.batch_size.BC,
+        batch_size=cfg.batch_size.wall,
     )
-    domain.add_constraint(BC, "BC")
+    domain.add_constraint(wall, "wall")
 
     # interior
     interior = PointwiseInteriorConstraint(
         nodes=nodes,
-        geometry=geo,
-        outvar={"wave_equation": 0},
+        geometry=rec,
+        outvar={"chameleon_equation": 0},
         batch_size=cfg.batch_size.interior,
-        bounds={x: (0, L), t_symbol: (0, L)},
-        lambda_weighting={
-            "wave_equation": geo.sdf,
-        },
+        bounds={x: (0, L), y: (0, L)},
+        lambda_weighting={"chameleon_equation": rec.sdf,},
     )
     domain.add_constraint(interior, "interior")
 

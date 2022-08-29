@@ -1,22 +1,28 @@
 defaults :
   - modulus_default
   - arch:
-      - fully_connected
+    - fully_connected
   - scheduler: tf_exponential_lr
   - optimizer: adam
   - loss: sum
   - _self_
 
+arch:
+  fully_connected:
+    layer_size: 512
+    nr_layers: 5
+    adaptive_activations: true
+
 scheduler:
   decay_rate: 0.95
-  decay_steps: 100
+  decay_steps: 5000
 
 training:
   rec_results_freq: 1000
   rec_constraint_freq: 10000
-  max_steps : 1000000
+  max_steps : 100000
 
 batch_size:
   initial: 500
-  interior: 1000
+  interior: 5000
   surface: 500
