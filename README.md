@@ -2,6 +2,4 @@
 
 ### Modulus Tests
 
-This repository mainly contains scratch work and testing for solving equations using NVIDIA [Modulus](https://developer.nvidia.com/modulus). These are basic assessments of how relevant physics-informed nets might be for cosmological applications, including looking at self-gravitating matter (including modifications to general relativity) and cosmology. 
-
-The answer: it's looking interesting!
+This repository mostly contains scratch work for PDE solving using NVIDIA's [Modulus](https://developer.nvidia.com/modulus). These are just some basic assessments of how relevant physics-informed nets (Modulus in particular) might be for studying cosmological systems, including self-gravitating matter and modifications to general relativity. It's looking interesting! More work forthcoming.
